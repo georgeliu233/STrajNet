@@ -11,7 +11,7 @@ This repo is the implementation of the following paper:
 - 🥈[**2022 Waymo Occupancy and Flow Prediction**](https://youtu.be/G01cfxuJ_ro)   
 - 🚗[**CVPR2022 Workshop on Autonomous Driving website**](https://cvpr2022.wad.vision)
 - 📑[**Waymo Occupancy and Flow Prediction Website**](https://waymo.com/open/challenges/2022/occupancy-flow-prediction-challenge/)
-- Our implementation has achieved 3 SOTA metrics (Aug-2022), outperforms other baselines without using pretrained models, and requires less memory costs:
+- Our implementation has achieved 3 SOTA metrics (Sep-2022), outperforms other baselines without using pretrained models, and requires less memory costs:
 
 ![](pics/leaderboard.png)
 
