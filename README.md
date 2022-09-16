@@ -17,7 +17,7 @@ This repo is the implementation of the following paper:
 
 - Model Framework Overview:
 
-![](pics/icra_main.pdf)
+![](pics/overview.png)
 
 ## Dataset
 Download the [Waymo Open Motion Dataset](https://waymo.com/open/data/motion/); the files in ```tf_exmaple/``` are used. Place the downloaded files into training and testing folders separately.
