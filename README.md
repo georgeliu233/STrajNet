@@ -26,6 +26,7 @@ Also download the required [scenario IDs files](https://console.cloud.google.com
 
 ## Citation
 If you find this work useful please cite us 😀
+'''
 @misc{https://doi.org/10.48550/arxiv.2208.00394,
   doi = {10.48550/ARXIV.2208.00394},
   url = {https://arxiv.org/abs/2208.00394},
@@ -36,4 +37,5 @@ If you find this work useful please cite us 😀
   year = {2022},
   copyright = {Creative Commons Attribution 4.0 International}
 }
+'''
 
