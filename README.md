@@ -7,10 +7,17 @@ This repo is the implementation of the following paper:
 <br> **[[arXiv]](http://arxiv.org/abs/2208.00394)**&nbsp;
 
 ## General Info
-- This implementation is improved upon our ablative solutions, which has won 2nd place for 2022 Waymo Occupancy and Flow Prediction Challenge
+- This implementation is improved upon our solutions in ablations, which has won the **2nd place for 2022 Waymo Occupancy and Flow Prediction Challenge**
 - 🥈[**2022 Waymo Occupancy and Flow Prediction**](https://youtu.be/G01cfxuJ_ro)   
 - 🚗[**CVPR2022 Workshop on Autonomous Driving website**](https://cvpr2022.wad.vision)
 - 📑[**Waymo Occupancy and Flow Prediction Website**](https://waymo.com/open/challenges/2022/occupancy-flow-prediction-challenge/)
+- Our implementation has achieved 3 SOTA metrics (Aug-2022), outperforms other baselines without using pretrained models, and requires less memory costs:
+
+![](pics/leaderboard.png)
+
+- Model Framework Overview:
+
+![](pics/icra_main.pdf)
 
 ## Dataset
 Download the [Waymo Open Motion Dataset](https://waymo.com/open/data/motion/); the files in ```tf_exmaple/``` are used. Place the downloaded files into training and testing folders separately.
