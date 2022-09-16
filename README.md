@@ -24,3 +24,16 @@ Download the [Waymo Open Motion Dataset](https://waymo.com/open/data/motion/); t
 
 Also download the required [scenario IDs files](https://console.cloud.google.com/storage/browser/_details/waymo_open_dataset_motion_v_1_1_0/uncompressed/occupancy_flow_challenge/) (.txt) for evalutation and testing
 
+## Citation
+If you find this work useful please cite us 😀
+@misc{https://doi.org/10.48550/arxiv.2208.00394,
+  doi = {10.48550/ARXIV.2208.00394},
+  url = {https://arxiv.org/abs/2208.00394},
+  author = {Liu, Haochen and Huang, Zhiyu and Lv, Chen},
+  keywords = {Computer Vision and Pattern Recognition (cs.CV), Artificial Intelligence (cs.AI), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  title = {STrajNet: Multi-modal Hierarchical Transformer for Occupancy Flow Field Prediction in Autonomous Driving},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {Creative Commons Attribution 4.0 International}
+}
+
