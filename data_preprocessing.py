@@ -25,8 +25,6 @@ class Processor(object):
     from PIL import Image as Image
     from time import time as time
 
-    from find_lanes import ReachableLanes as ReachableLanes
-
     def __init__(self, area_size, max_actors,max_occu, radius,rasterisation_size=256,save_dir='.',ids_dir=''):
         # parameters
         self.img_size = rasterisation_size # size = pixels * pixels
@@ -78,8 +76,6 @@ class Processor(object):
         #[batch,actor_num,11,1]
         self.actor_valid = actor_valid[0,:,:,0].numpy()
         self.actor_type = parsed['state/type'][0].numpy()
-        # curr_valid = self.actor_valid[:,-1]
-        
 
         # road map
         roadgraph_xyz = map_traj[0].numpy()
@@ -180,32 +176,6 @@ class Processor(object):
             output_occu_actors[i] = np.concatenate((occu_traj[d] ,np.tile(out_occu_type[i],(11,1))),axis=-1)
         
         return output_actors , output_occu_actors #, np.array(current_state)
-
-    def centerline_process(self):
-        #DEPRECATED too slow
-        # np = self.np
-        centerlines = np.zeros(shape=(200, 10, 3)) # (num_trajs, num_steps, (x, y, theta))
-        flag = False
-        data = {'roadgraph_id':self.roadgraph_uid, 'roadgraph_type':self.roadgraph_type, 
-                        'roadgraph_xyz':self.roadgraph_xyz, 'roadgraph_dir':self.roadgraph_dir,
-                        'current_states':self.current_states[:,:2], 'current_theta':self.current_states[:,-1],
-                        'object_types':self.current_type,'roadgraph_traj':self.roadgraph_real_traj}
-        self.centerlines = []
-        self.lane_ids=[]
-        # for vehicles
-        for target_id in range(len(self.current_type)):
-
-            if self.current_type[target_id] == 1:
-                cur_centerlines, candidate_lanes,all_id = self.ReachableLanes(target_id, data).process_candidate_lanes()
-                self.centerlines.extend(cur_centerlines)
-                # print(all_id)
-                self.lane_ids.extend(all_id)
-                if candidate_lanes != []:
-                    flag = True
-                    num_lanes = len(candidate_lanes)
-        self.lane_uids = np.unique(self.lane_ids)
-        # print(len(self.lane_uids),len(self.lane_ids))
-        return centerlines, flag
     
     def seg_traj(self,traj,emb,seg_length=10):
         # np = self.np
