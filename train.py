@@ -191,7 +191,7 @@ flow_origin_weight = 1000.0
 flow_weight = 1.0
 
 with strategy.scope():
-    model = STrajNet(cfg,actor_only=True,sep_actors=False,fg_msa=True,fg=True)
+    model = STrajNet(cfg,actor_only=True,sep_actors=False)
     loss_fn = OGMFlow_loss(config,replica=REPLICA,no_use_warp=False,use_pred=False,use_gt=True,
     ogm_weight=ogm_weight, occ_weight=occ_weight,flow_origin_weight=flow_origin_weight,flow_weight=flow_weight,use_focal_loss=False)
     optimizer = tf.keras.optimizers.Nadam(learning_rate=LR) 

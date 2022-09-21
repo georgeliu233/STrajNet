@@ -1,5 +1,23 @@
+import os 
+os.environ['CUDA_VISIBLE_DEVICES']='-1'
+import matplotlib.pyplot as plt  
+import tensorflow as tf
+
+from google.protobuf import text_format
+from waymo_open_dataset.protos import occupancy_flow_metrics_pb2
+from waymo_open_dataset.protos import occupancy_flow_submission_pb2
+from waymo_open_dataset.protos import scenario_pb2
+from waymo_open_dataset.utils import occupancy_flow_data
+from waymo_open_dataset.utils import occupancy_flow_grids
+from waymo_open_dataset.utils import occupancy_flow_renderer
+from waymo_open_dataset.utils import occupancy_flow_vis
+
+from tqdm import tqdm
+from PIL import Image as Image
+from time import time as time
 
 from data_utils import road_label,road_line_map,light_label,light_state_map
+from grid_utils import create_all_grids,rotate_all_from_inputs,add_sdc_fields
 import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib as mpl
@@ -7,23 +25,22 @@ import argparse
 import os
 mpl.use('Agg')
 
+def extract_lines(xy, id, typ):
+    line = [] # a list of points  
+    lines = [] # a list of lines
+    length = xy.shape[0]
+    for i, p in enumerate(xy):
+        line.append(p)
+        next_id = id[i+1] if i < length-1 else id[i]
+        current_id = id[i]
+        if next_id != current_id or i == length-1:
+            if typ in [18, 19]:
+                line.append(line[0])
+            lines.append(line)
+            line = []
+    return lines
+
 class Processor(object):
-    import os as os   
-    import matplotlib.pyplot as plt  
-    import tensorflow as tf
-
-    from google.protobuf import text_format
-    from waymo_open_dataset.protos import occupancy_flow_metrics_pb2
-    from waymo_open_dataset.protos import occupancy_flow_submission_pb2
-    from waymo_open_dataset.protos import scenario_pb2
-    from waymo_open_dataset.utils import occupancy_flow_data
-    from waymo_open_dataset.utils import occupancy_flow_grids
-    from waymo_open_dataset.utils import occupancy_flow_renderer
-    from waymo_open_dataset.utils import occupancy_flow_vis
-
-    from tqdm import tqdm
-    from PIL import Image as Image
-    from time import time as time
 
     def __init__(self, area_size, max_actors,max_occu, radius,rasterisation_size=256,save_dir='.',ids_dir=''):
         # parameters
@@ -39,14 +56,14 @@ class Processor(object):
 
     def load_data(self, filename):
         self.filename = filename
-        dataset = self.tf.data.TFRecordDataset(filename, compression_type='')
+        dataset = tf.data.TFRecordDataset(filename, compression_type='')
         self.dataset_length = len(list(dataset.as_numpy_iterator()))
-        dataset = dataset.map(self.occupancy_flow_data.parse_tf_example)
+        dataset = dataset.map(occupancy_flow_data.parse_tf_example)
         self.datalist = dataset.batch(1)
         # self.datalist = list(dataset.as_numpy_iterator())
     
     def get_config(self):
-        config = self.occupancy_flow_metrics_pb2.OccupancyFlowTaskConfig()
+        config = occupancy_flow_metrics_pb2.OccupancyFlowTaskConfig()
         config_text = """
         num_past_steps: 10
         num_future_steps: 80
@@ -61,12 +78,12 @@ class Processor(object):
         agent_points_per_side_length: 48
         agent_points_per_side_width: 16
         """
-        self.text_format.Parse(config_text, config)
+        text_format.Parse(config_text, config)
 
         self.config = config
 
     def read_data(self, parsed):
-        from grid_utils import create_all_grids,rotate_all_from_inputs
+        
         map_traj,real_map_traj,map_valid,actor_traj,traj_mask,occu_mask,actor_valid = rotate_all_from_inputs(parsed, self.config)
         
         # actor traj
@@ -212,15 +229,12 @@ class Processor(object):
                 traj = self.roadgraph_real_traj[mask]
                 seg_traj = self.seg_traj(traj,seg_length=seg_length,emb=emb_type)
                 seg_traj_len = seg_traj.shape[0]
-                # embs = np.tile(emb_type, (seg_traj_len,10,1))
-                # seg_traj = np.concatenate((seg_traj,embs),axis=-1)
 
                 line_cnt += seg_traj_len
                 res_traj.append(seg_traj)
                 if line_cnt>num_segs:
                     break
             res_traj = np.concatenate(res_traj,axis=0)[:num_segs]
-            # print(res_traj.shape[0])
             if res_traj.shape[0]<num_segs:
                 res_traj = np.concatenate((res_traj, np.zeros((num_segs-res_traj.shape[0],10,4+3))),axis=0)
             return res_traj
@@ -228,9 +242,7 @@ class Processor(object):
             return np.zeros((num_segs,10,4+3))
 
     def ogm_process(self,inputs):
-        tf = self.tf
-        # np = self.np
-        timestep_grids = self.occupancy_flow_grids.create_ground_truth_timestep_grids(inputs, self.config)
+        timestep_grids = occupancy_flow_grids.create_ground_truth_timestep_grids(inputs, self.config)
         gt_v_ogm = tf.concat([timestep_grids.vehicles.past_occupancy,timestep_grids.vehicles.current_occupancy],axis=-1)
         gt_o_ogm = tf.concat([tf.clip_by_value(
                 timestep_grids.pedestrians.past_occupancy +
@@ -242,7 +254,6 @@ class Processor(object):
         ogm = tf.stack([gt_v_ogm,gt_o_ogm],axis=-1)
         return ogm[0].numpy().astype(np.bool_),timestep_grids
     
-
     def image_process(self,show_image=False,num=0):
 
         fig, ax = plt.subplots()
@@ -308,8 +319,7 @@ class Processor(object):
         return array
 
     def gt_process(self,timestep_grids,flow_only=False):
-        tf = self.tf
-        true_waypoints = self.occupancy_flow_grids.create_ground_truth_waypoint_grids(timestep_grids=timestep_grids, config=self.config)
+        true_waypoints = occupancy_flow_grids.create_ground_truth_waypoint_grids(timestep_grids=timestep_grids, config=self.config)
         if flow_only:
             gt_origin_flow = tf.concat(true_waypoints.vehicles.flow_origin_occupancy,axis=0).numpy()
             return gt_origin_flow
@@ -319,81 +329,7 @@ class Processor(object):
         gt_origin_flow = tf.concat(true_waypoints.vehicles.flow_origin_occupancy,axis=0).numpy()
         return gt_obs_ogm,gt_occ_ogm,gt_flow,gt_origin_flow
     
-    def add_origin(self,filedir=None):
-        i = 0
-        s = self.time()
-        self.pbar = self.tqdm(total=self.dataset_length)
-        num = self.filename.split('-')[1]
-        assert filedir is not None
-        example_dir = filedir+f'{num}_{self.dataset_length}'
-        for dataframe in self.datalist:
-            data = dict(np.load(example_dir+f'_{i}.npz',allow_pickle=True))
-            cl = data['centerlines']
-            if len(cl.shape) !=3:
-                cl = np.concatenate(cl,axis=0)[:256]
-                data['centerlines'] = cl
-            if "origin_flow" in data:
-                continue
-            dataframe = occupancy_flow_data.add_sdc_fields(dataframe)
-            ogm,timestep_grids = self.ogm_process(dataframe)
-            gt_origin_flow=self.gt_process(timestep_grids,flow_only=True)
-            data['origin_flow']=gt_origin_flow
-            np.savez(example_dir+f'_{i}.npz',**data)
-            i += 1
-            self.pbar.update(1)
-        self.pbar.close()
-    
-    def _parse_image_function(self,example_proto):
-        new_dict = {}
-        tf = self.tf
-        feature =  {
-            'centerlines': tf.io.FixedLenFeature([], tf.string),
-            'actors': tf.io.FixedLenFeature([], tf.string),
-            'occl_actors': tf.io.FixedLenFeature([], tf.string),
-            'ogm': tf.io.FixedLenFeature([], tf.string),
-            'map_image': tf.io.FixedLenFeature([], tf.string),
-            'gt_obs_ogm': tf.io.FixedLenFeature([], tf.string),
-            'gt_occ_ogm': tf.io.FixedLenFeature([], tf.string),
-            'gt_flow': tf.io.FixedLenFeature([], tf.string),
-            'origin_flow': tf.io.FixedLenFeature([], tf.string)
-        }
-
-        d =  tf.io.parse_single_example(example_proto, feature)
-        new_dict['centerlines'] = tf.reshape(tf.io.decode_raw(d['centerlines'],tf.float64),[256,10,7])
-        new_dict['actors'] = tf.reshape(tf.io.decode_raw(d['actors'],tf.float64),[48,11,8])
-        new_dict['occl_actors'] = tf.reshape(tf.io.decode_raw(d['occl_actors'],tf.float64),[16,11,8])
-
-        new_dict['ogm'] = tf.reshape(tf.cast(tf.io.decode_raw(d['ogm'],tf.bool),tf.float32),[256,256,22])
-
-        new_dict['gt_obs_ogm'] = tf.reshape(tf.cast(tf.io.decode_raw(d['gt_obs_ogm'],tf.bool),tf.float32),[8,256,256,1])
-        new_dict['gt_occ_ogm'] = tf.reshape(tf.cast(tf.io.decode_raw(d['gt_occ_ogm'],tf.bool),tf.float32),[8,256,256,1])
-        new_dict['gt_flow'] = tf.reshape(tf.io.decode_raw(d['gt_flow'],tf.float32),[8,256,256,2])
-        new_dict['origin_flow'] = tf.reshape(tf.io.decode_raw(d['origin_flow'],tf.float32),[8,256,256,1])
-
-        new_dict['map_image'] = tf.reshape(tf.cast(tf.io.decode_raw(d['map_image'],tf.int8),tf.float32),[256,256,3])
-        return new_dict
-    
-    def _parse_image_function_pred(self,example_proto,pred=True):
-        new_dict = {}
-        tf = self.tf
-        feature =  {
-        'centerlines': tf.io.FixedLenFeature([], tf.string),
-        'actors': tf.io.FixedLenFeature([], tf.string),
-        'occl_actors': tf.io.FixedLenFeature([], tf.string),
-        'ogm': tf.io.FixedLenFeature([], tf.string),
-        'map_image': tf.io.FixedLenFeature([], tf.string)
-        }
-        d =  tf.io.parse_single_example(example_proto, feature)
-        new_dict['centerlines'] = tf.reshape(tf.io.decode_raw(d['centerlines'],tf.float64),[256,10,7])
-        new_dict['actors'] = tf.reshape(tf.io.decode_raw(d['actors'],tf.float64),[48,11,8])
-        new_dict['occl_actors'] = tf.reshape(tf.io.decode_raw(d['occl_actors'],tf.float64),[16,11,8])
-        new_dict['ogm'] = tf.reshape(tf.cast(tf.io.decode_raw(d['ogm'],tf.bool),tf.float32),[256,256,22])
-
-        new_dict['map_image'] = tf.reshape(tf.cast(tf.io.decode_raw(d['map_image'],tf.int8),tf.float32),[256,256,3])
-        return new_dict
-    
     def get_ids(self,val=True):
-        tf = self.tf
         if val:
             path = f'{self.ids_dir}/validation_scenario_ids.txt'
         else:
@@ -427,11 +363,9 @@ class Processor(object):
         return writer
         
     def workflow(self,pred=False,val=False):
-        tf = self.tf
         i = 0
-        self.pbar = self.tqdm(total=self.dataset_length)
+        self.pbar = tqdm(total=self.dataset_length)
         num = self.filename.split('-')[1]
-        assert filedir is not None
         writer = self.build_saving_tfrecords(pred, val,num)
         
         for dataframe in self.datalist:
@@ -443,7 +377,7 @@ class Processor(object):
                     self.pbar.update(1)
                     continue
 
-            dataframe = self.occupancy_flow_data.add_sdc_fields(dataframe)
+            dataframe = add_sdc_fields(dataframe)
             self.read_data(dataframe)
 
             ogm,timestep_grids = self.ogm_process(dataframe)
@@ -528,7 +462,7 @@ if __name__=="__main__":
     parser.add_argument('--ids_dir', type=str, help='ids.txt downloads from Waymos', default="./Waymo_Dataset/occupancy_flow_challenge/")
     parser.add_argument('--save_dir', type=str, help='saving directory',default="./Waymo_Dataset/preprocessed_data/")
     parser.add_argument('--file_dir', type=str, help='Dataset directory',default="./Waymo_Dataset/tf_example")
-    parser.add_argument('--pool', type=int, help='num of pooling multi-processes in preprocessing',default="./Waymo_Dataset/preprocessed_data/")
+    parser.add_argument('--pool', type=int, help='num of pooling multi-processes in preprocessing',default=2)
     args = parser.parse_args()
 
     NUM_POOLS = args.pool
@@ -537,7 +471,7 @@ if __name__=="__main__":
     print(f'Processing training data...{len(train_files)} found!')
     print('Starting processing pooling...')
     with Pool(NUM_POOLS) as p:
-        p.map(edit_training_data, train_files)
+        p.map(process_training_data, train_files)
     
     val_files = glob(f'{args.file_dir}/validation/*')
     print(f'Processing validation data...{len(val_files)} found!')

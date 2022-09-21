@@ -1,11 +1,11 @@
-from waymo_open_dataset.utils.occupancy_flow_renderer import _sample_and_filter_agent_points,_transform_to_image_coordinates,rotate_points_around_origin,_stack_field
+from waymo_open_dataset.utils.occupancy_flow_renderer import _sample_and_filter_agent_points,rotate_points_around_origin,_stack_field
 from data_utils import *
 import tensorflow as tf
 import numpy as np
 
 import dataclasses
 import math
-from typing import List, Mapping, Sequence, Tuple
+from typing import List, Mapping, Sequence, Tuple,Dict
 
 from waymo_open_dataset.protos import occupancy_flow_metrics_pb2
 from waymo_open_dataset.protos import scenario_pb2
@@ -15,7 +15,66 @@ _ObjectType = scenario_pb2.Track.ObjectType
 
 import tensorflow as tf
 
+def _transform_to_image_coordinates(
+    points_x: tf.Tensor,
+    points_y: tf.Tensor,
+    config: occupancy_flow_metrics_pb2.OccupancyFlowTaskConfig,
+    larger_box:bool=False,
+) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+  """Returns transformed points and a mask indicating whether point is in image.
 
+  Args:
+    points_x: Tensor of any shape containing x values in world coordinates
+      centered on the autonomous vehicle (see translate_sdc_to_origin).
+    points_y: Tensor with same shape as points_x containing y values in world
+      coordinates centered on the autonomous vehicle.
+    config: OccupancyFlowTaskConfig proto message.
+
+  Returns:
+    Tuple containing the following tensors:
+      - Transformed points_x.
+      - Transformed points_y.
+      - tf.bool tensor with same shape as points_x indicating which points are
+        inside the FOV of the image after transformation.
+  """
+  pixels_per_meter = config.pixels_per_meter
+  points_x = tf.round(points_x * pixels_per_meter) + config.sdc_x_in_grid
+  points_y = tf.round(-points_y * pixels_per_meter) + config.sdc_y_in_grid
+
+  # Filter out points that are located outside the FOV of topdown map.
+  if not larger_box:
+    point_is_in_fov = tf.logical_and(
+        tf.logical_and(
+            tf.greater_equal(points_x, 0), tf.greater_equal(points_y, 0)),
+        tf.logical_and(
+            tf.less(points_x, config.grid_width_cells),
+            tf.less(points_y, config.grid_height_cells)))
+  else:
+    point_is_in_fov = tf.logical_and(
+        tf.logical_and(
+            tf.greater_equal(points_x, 0-64), tf.greater_equal(points_y, 0-64)),
+        tf.logical_and(
+            tf.less(points_x, config.grid_width_cells+64),
+            tf.less(points_y, config.grid_height_cells+64)))
+
+  return points_x, points_y, point_is_in_fov
+
+
+def add_sdc_fields(inputs: Dict[str, tf.Tensor]) -> Dict[str, tf.Tensor]:
+  """Extracts current x, y, z of the autonomous vehicle as specific fields."""
+  # [batch_size, 2]
+  sdc_indices = tf.where(tf.equal(inputs['state/is_sdc'], 1))
+  # [batch_size, 1]
+  inputs['sdc/current/x'] = tf.gather_nd(inputs['state/current/x'], sdc_indices)
+  inputs['sdc/current/y'] = tf.gather_nd(inputs['state/current/y'], sdc_indices)
+  inputs['sdc/current/z'] = tf.gather_nd(inputs['state/current/z'], sdc_indices)
+
+  inputs['sdc/current/velocity_x'] = tf.gather_nd(inputs['state/current/velocity_x'], sdc_indices)
+  inputs['sdc/current/velocity_y'] = tf.gather_nd(inputs['state/current/velocity_y'], sdc_indices)
+
+  inputs['sdc/current/bbox_yaw'] = tf.gather_nd(
+      inputs['state/current/bbox_yaw'], sdc_indices)
+  return inputs
 
 def create_all_grids(
     inputs: Mapping[str, tf.Tensor],
