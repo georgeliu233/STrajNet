@@ -452,7 +452,7 @@ class SwinTransformerEncoder(tf.keras.Model):
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=LayerNormalization, ape=False, patch_norm=True,
-                 use_checkpoint=False,sep_encode=False,no_map=False,flow_sep=False,use_flow=False, **kwargs):
+                 use_checkpoint=False,sep_encode=False,no_map=False,flow_sep=False,use_flow=False,large_input=False, **kwargs):
         super().__init__(name=model_name)
         """
         Encoder of SwinTransformer
@@ -484,13 +484,12 @@ class SwinTransformerEncoder(tf.keras.Model):
         self.no_map=no_map
 
         self.use_flow = use_flow
+        self.large_input = large_input
 
         # split image into non-overlapping patches
-
         self.patch_embed_vecicle = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
-
             
         self.sep_encode=sep_encode
 
@@ -504,7 +503,7 @@ class SwinTransformerEncoder(tf.keras.Model):
                                                       shape=(
                                                           1, num_patches, embed_dim),
                                                       initializer=tf.initializers.Zeros())
-        # stochastic depth
+
         dpr = [x for x in np.linspace(0., drop_path_rate, sum(depths))]
 
         if sep_encode:
@@ -531,13 +530,11 @@ class SwinTransformerEncoder(tf.keras.Model):
                                                     downsample=PatchMerging if (
                                                         0 < self.num_layers - 1) else None,# No downsample of the last layer
                                                     use_checkpoint=use_checkpoint,
-                                                    prefix=f'flow_layers{0}')
+                                                    prefix=f'flow_layers{0}')      
             if not self.no_map:
-                
                 self.patch_embed_map = PatchEmbed(
                     img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,
                     norm_layer=norm_layer if self.patch_norm else None)
-
         # build layers
         self.basic_layers = [BasicLayer(dim=int(embed_dim * 2 ** i_layer),
                                                 input_resolution=(patches_resolution[0] // (2 ** i_layer),
@@ -557,11 +554,13 @@ class SwinTransformerEncoder(tf.keras.Model):
                                                 prefix=f'layers{i_layer}') for i_layer in range(self.num_layers)]
         
         self.final_resolution = patches_resolution[0] // (2 ** (self.num_layers - 1)), patches_resolution[1] // (2 ** (self.num_layers - 1))
-        # self.norm = norm_layer(epsilon=1e-5, name='norm')
         self.all_patch_norm = norm_layer(epsilon=1e-5,name='all_norm')
         
         dummy_ogm = tf.zeros([1,img_size[0],img_size[1],11,2])
-        dummy_map = tf.zeros([1,img_size[0],img_size[1],3])
+        if self.large_input:
+           dummy_map = tf.zeros([1,img_size[0]//2,img_size[1]//2,3]) 
+        else:
+            dummy_map = tf.zeros([1,img_size[0],img_size[1],3])
 
         dummy_flow =tf.zeros((1,)+(img_size[0],img_size[1])+(2,))
 
@@ -572,14 +571,20 @@ class SwinTransformerEncoder(tf.keras.Model):
         if self.sep_encode:
             vec,ped_cyc = x[:,:,:,:,0],x[:,:,:,:,1]
             if self.no_map:
-                x = self.patch_embed_vecicle(vec) #+ self.patch_embed_ped_cyc(ped_cyc)
+                x = self.patch_embed_vecicle(vec)
             elif self.flow_sep and self.use_flow:
                 flow = self.patch_embed_flow(flow)
                 flow = self.flow_norm(flow)
                 flow_x,flow_res = self.flow_layer(flow,training)
-
-                x = self.patch_embed_vecicle(vec) +  self.patch_embed_map(map_img) #+ self.patch_embed_bycp(ped_cyc)
-
+                if not self.large_input:
+                    x = self.patch_embed_vecicle(vec) +  self.patch_embed_map(map_img)
+                else:
+                    maps = self.patch_embed_map(map_img)
+                    maps = tf.reshape(maps,[-1,64,64,self.embed_dim])
+                    maps = tf.pad(maps,tf.constant([[0,0],[32,32],[32,32],[0,0]]))
+                    maps = tf.reshape(maps,[-1,128*128,self.embed_dim])
+                    x = self.patch_embed_vecicle(vec)
+                    x = x + maps
             else:
                 if self.use_flow:
                     x = self.patch_embed_vecicle(vec) +  self.patch_embed_map(map_img) + self.patch_embed_flow(flow)
@@ -594,12 +599,10 @@ class SwinTransformerEncoder(tf.keras.Model):
             x = self.patch_embed_vecicle(x)
         if self.ape:
             x = x + self.absolute_pos_embed
-
         x = self.all_patch_norm(x)
         res_list=[]
         for i,st_layer in enumerate(self.basic_layers):
             x,res = st_layer(x,training)
-
             if i==self.num_layers - 1:
                 H, W = self.final_resolution
                 B, L, C = x.get_shape().as_list()
@@ -608,9 +611,16 @@ class SwinTransformerEncoder(tf.keras.Model):
                 res = tf.reshape(res, shape=[-1, H, W, C])
             if i==0 and self.flow_sep and self.use_flow:
                 x = x + flow_x
+                if self.large_input:
+                    flow_res = tf.reshape(tf.reshape(flow_res,[-1,128,128,self.embed_dim])[:,32:32+64,32:32+64,:],[-1,64*64,96])
                 res_list.append(flow_res)
+            if self.large_input:
+                init_res = 128 // (2**i)
+                dim = self.embed_dim * (2**i)
+                crop = init_res // 2
+                c_b,c_e = int(init_res*0.25),int(init_res*0.75)
+                res = tf.reshape(tf.reshape(res,[-1,init_res,init_res,dim])[:,c_b:c_e,c_b:c_e,:],[-1,crop*crop,dim])
             res_list.append(res)
-
         return res_list
 
     def call(self, x,map_img,flow,training=True):
@@ -761,160 +771,18 @@ class Pyramid3DDecoder(tf.keras.Model):
 
         return x
 
-class SwinPNet(tf.keras.Model):
-    def __init__(self,cfg,cfg_d=None,model_name='SwinTPnet',include_top=True,split_pred=False):
-        super().__init__(name=model_name)
-
-        self.encoder = SwinTransformerEncoder(include_top=include_top,img_size=cfg['input_size'], window_size=cfg[
-            'window_size'], embed_dim=cfg['embed_dim'], depths=cfg['depths'], num_heads=cfg['num_heads'])
-
-        self.decoder = SwinTransformerDecoder(include_top=include_top,img_size=cfg_d['input_size'], window_size=cfg_d[
-            'window_size'], embed_dim=cfg_d['embed_dim'], depths=cfg_d['depths'], num_heads=cfg_d['num_heads'])
-        
-        conv2d_kwargs = {
-            'kernel_size': 3,
-            'strides': 1,
-            'padding': 'same',
-        }
-        
-        self.upsample = [
-            tf.keras.layers.UpSampling2D(name=f'upsample_{i}') for i in range(2)
-        ]
-
-        decoder_channels = [96,48]
-
-        self.conv_layers = [
-            tf.keras.layers.Conv2D(
-            filters=decoder_channels[i],
-            activation='elu',
-            name=f'upconv_{i}',
-            **conv2d_kwargs) for i in range(2)
-        ]
-
-        self.split_pred = split_pred
-        if split_pred:
-            out_channel=16
-            self.upsample_f = [
-            tf.keras.layers.UpSampling2D(name=f'upsamplef_{i}') for i in range(2)
-            ]
-            self.conv_layers_f = [
-            tf.keras.layers.Conv2D(
-            filters=decoder_channels[i],
-            activation='elu',
-            name=f'upconvf_{i}',
-            **conv2d_kwargs) for i in range(2)
-            ]
-            self.out_conv_f = tf.keras.layers.Conv2D(
-            filters=out_channel,
-            activation=None,
-            name=f'outconvf',
-            **conv2d_kwargs)
-        else:
-            out_channel=32
-
-        self.out_conv = tf.keras.layers.Conv2D(
-            filters=out_channel,
-            activation=None,
-            name=f'outconv',
-            **conv2d_kwargs)
-
-        dummy_ogm =tf.zeros((1,)+cfg['input_size']+(11,2,))
-        dummy_map =tf.zeros((1,)+cfg['input_size']+(3,))
-        self(dummy_ogm,dummy_map)
-        self.summary()
-
-    def decode_head(self,y,training=True):
-        if self.split_pred:
-            flow = y
-            flow = self.upsample_f[0](flow)
-            flow = self.conv_layers_f[0](flow)
-            flow = self.upsample_f[1](flow)
-            flow = self.conv_layers_f[1](flow)
-            flow = self.out_conv_f(flow)
-
-        y = self.upsample[0](y)
-        y = self.conv_layers[0](y)
-        y = self.upsample[1](y)
-        y = self.conv_layers[1](y)
-        y = self.out_conv(y)
-
-        if self.split_pred:
-            shape = [-1,256 , 256,8,2]
-            flow = tf.reshape(flow,shape)
-            y = tf.reshape(y, shape)
-            y = tf.concat([y,flow], axis=-1)
-            y = tf.reshape(y,[-1,256,256,32])
-        return y
-
-    def call(self,ogm,map_img,training=True,obs=None,occ=None,mapt=None):
-        res_list = self.encoder(ogm,map_img,training)
-        y = self.decoder(res_list[-1],res_list,training)
-        y = self.decode_head(y,training)
-        return y
-
-class SwinSNet(tf.keras.Model):
-    def __init__(self,cfg,cfg_d=None,model_name='SwinTPnet',include_top=True,use_pyramid=False):
-        super().__init__(name=model_name)
-        self.encoder = SwinTransformerEncoder(include_top=include_top,img_size=cfg['input_size'], window_size=cfg[
-            'window_size'], embed_dim=cfg['embed_dim'], depths=cfg['depths'], num_heads=cfg['num_heads'])
-
-        self.decoder = PyramidDecoder(config=None,img_size=cfg['input_size'],use_pyramid=use_pyramid)
-
-        dummy_ogm =tf.zeros((1,)+cfg['input_size']+(11,2,))
-        dummy_map =tf.zeros((1,)+cfg['input_size']+(3,))
-        dummy_flow =tf.zeros((1,)+cfg['input_size']+(2,))
-
-        self(dummy_ogm,dummy_map,flow=dummy_flow)
-        self.summary()
-
-    def call(self,ogm,map_img,training=True,obs=None,occ=None,mapt=None,flow=None):
-        res_list = self.encoder(ogm,map_img,flow,training)
-        y = self.decoder(res_list[-1],training,res_list)
-        return y
-
-from waymo_open_dataset.utils import occupancy_flow_grids
-class DoubleSwinSNet(tf.keras.Model):
-    def __init__(self,cfg,cfg_d=None,model_name='SwinTPnet',include_top=True,use_pyramid=False):
-        super().__init__(name=model_name)
-        self.encoder_o = SwinTransformerEncoder(include_top=include_top,img_size=cfg['input_size'], window_size=cfg[
-            'window_size'], embed_dim=cfg['embed_dim'], depths=cfg['depths'], num_heads=cfg['num_heads'],
-            no_map=True)
-        
-        # self.encoder_f = SwinTransformerEncoder(include_top=include_top,img_size=cfg['input_size'], window_size=cfg[
-        #     'window_size'], embed_dim=cfg['embed_dim'], depths=cfg['depths'], num_heads=cfg['num_heads'])
-
-        self.decoder_o = PyramidDecoder(config=None,img_size=cfg['input_size'],use_pyramid=use_pyramid,double_decode=True)
-        self.decoder_f = PyramidDecoder(config=None,img_size=cfg['input_size'],use_pyramid=use_pyramid,double_decode=True,
-        stp_grad=False)
-
-        dummy_ogm =tf.zeros((1,)+cfg['input_size']+(11,2,))
-        dummy_map =tf.zeros((1,)+cfg['input_size']+(3,))
-        self(dummy_ogm,dummy_map)
-        self.summary()
-
-    def call(self,ogm,map_img,training=True,obs=None,occ=None,mapt=None):
-        res_list_o = self.encoder_o(ogm,map_img,training)
-        y_o = self.decoder_o(res_list_o[-1],training,res_list_o)
-        y_o = tf.reshape(y_o,[-1,256,256,8,2])
-
-        y_f = self.decoder_f(res_list_o[-1],training,res_list_o)
-        y_f = tf.reshape(y_f,[-1,256,256,8,2])
-
-        y = tf.reshape(tf.concat([y_o,y_f],axis=-1),[-1,256,256,32])
-
-        return y
-
 from trajNet import TrajNetCrossAttention
 from FG_MSA import FGMSA
 
 class STrajNet(tf.keras.Model):
     def __init__(self,cfg,model_name='STrajNet',use_pyramid=True,actor_only=True,sep_actors=False,
-        fg_msa=False,use_last_ref=False,fg=False):
+        fg_msa=False,use_last_ref=False,fg=False,large_ogm=True):
         super().__init__(name=model_name)
 
         self.encoder = SwinTransformerEncoder(include_top=True,img_size=cfg['input_size'], window_size=cfg[
             'window_size'], embed_dim=cfg['embed_dim'], depths=cfg['depths'], num_heads=cfg['num_heads'],
-            sep_encode=True,flow_sep=True,use_flow=True,drop_rate=0.0, attn_drop_rate=0.0,drop_path_rate=0.1)
+            sep_encode=True,flow_sep=True,use_flow=True,drop_rate=0.0, attn_drop_rate=0.0,drop_path_rate=0.1,
+            large_input=large_ogm)
         
         if sep_actors:
             traj_cfg = dict(traj_heads=4,att_heads=6,out_dim=384,no_attn=True)

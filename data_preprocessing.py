@@ -55,10 +55,10 @@ class Processor(object):
         num_waypoints: 8
         cumulative_waypoints: false
         normalize_sdc_yaw: true
-        grid_height_cells: 256
-        grid_width_cells: 256
-        sdc_y_in_grid: 192
-        sdc_x_in_grid: 128
+        grid_height_cells: 512
+        grid_width_cells: 512
+        sdc_y_in_grid: 320
+        sdc_x_in_grid: 256
         pixels_per_meter: 3.2
         agent_points_per_side_length: 48
         agent_points_per_side_width: 16
