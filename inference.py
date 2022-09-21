@@ -140,7 +140,7 @@ print('load_model...')
 
 from swinT import STrajNet
 cfg=dict(input_size=(512,512), window_size=8, embed_dim=96, depths=[2,2,2], num_heads=[3,6,12])
-model = STrajNet(cfg,sep_actors=False,defattn=True)
+model = STrajNet(cfg,sep_actors=False,defattn=True,fg=True)
 
 def test_step(data):
     map_img = data['map_image']
