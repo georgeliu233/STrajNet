@@ -451,7 +451,7 @@ def process_test_data(filename):
     processor = Processor(rasterisation_size=256, area_size=[70, 35, 50], max_occu=16,max_actors=48, radius=30,
     save_dir=args.save_dir, ids_dir=args.ids_dir)
     processor.load_data(filename)
-    processor.workflow(test=True)
+    processor.workflow(pred=True)
     print(filename, 'done!')
 
 if __name__=="__main__":
