@@ -70,6 +70,25 @@ class Processor(object):
         num_waypoints: 8
         cumulative_waypoints: false
         normalize_sdc_yaw: true
+        grid_height_cells: 256
+        grid_width_cells: 256
+        sdc_y_in_grid: 192
+        sdc_x_in_grid: 128
+        pixels_per_meter: 3.2
+        agent_points_per_side_length: 48
+        agent_points_per_side_width: 16
+        """
+        text_format.Parse(config_text, config)
+
+        self.config = config
+
+        ogm_config = occupancy_flow_metrics_pb2.OccupancyFlowTaskConfig()
+        oconfig_text = """
+        num_past_steps: 10
+        num_future_steps: 80
+        num_waypoints: 8
+        cumulative_waypoints: false
+        normalize_sdc_yaw: true
         grid_height_cells: 512
         grid_width_cells: 512
         sdc_y_in_grid: 320
@@ -78,9 +97,8 @@ class Processor(object):
         agent_points_per_side_length: 48
         agent_points_per_side_width: 16
         """
-        text_format.Parse(config_text, config)
-
-        self.config = config
+        text_format.Parse(oconfig_text, ogm_config)
+        self.ogm_config = ogm_config
 
     def read_data(self, parsed):
         
@@ -242,7 +260,7 @@ class Processor(object):
             return np.zeros((num_segs,10,4+3))
 
     def ogm_process(self,inputs):
-        timestep_grids = occupancy_flow_grids.create_ground_truth_timestep_grids(inputs, self.config)
+        timestep_grids = occupancy_flow_grids.create_ground_truth_timestep_grids(inputs, self.ogm_config)
         gt_v_ogm = tf.concat([timestep_grids.vehicles.past_occupancy,timestep_grids.vehicles.current_occupancy],axis=-1)
         gt_o_ogm = tf.concat([tf.clip_by_value(
                 timestep_grids.pedestrians.past_occupancy +
@@ -383,10 +401,8 @@ class Processor(object):
             ogm,timestep_grids = self.ogm_process(dataframe)
             output_actors,occu_actors = self.actor_traj_process()
             map_trajs = self.map_traj_process()
+
             image = self.image_process(show_image=False,num=i)
-
-            vec_flow,byc_flow = self.flow_process(timestep_grids)
-
             image = image.tobytes()
             ogm = ogm.tobytes()
 
@@ -424,6 +440,8 @@ class Processor(object):
             writer.write(example.SerializeToString())
             self.pbar.update(1)
             i+=1
+            # if i>=64:
+            #     break
 
         writer.close()
         self.pbar.close()
@@ -467,20 +485,20 @@ if __name__=="__main__":
 
     NUM_POOLS = args.pool
 
-    train_files = glob(f'{args.file_dir}/training/*')
-    print(f'Processing training data...{len(train_files)} found!')
-    print('Starting processing pooling...')
-    with Pool(NUM_POOLS) as p:
-        p.map(process_training_data, train_files)
+    # train_files = glob(f'{args.file_dir}/training/*')
+    # print(f'Processing training data...{len(train_files)} found!')
+    # print('Starting processing pooling...')
+    # with Pool(NUM_POOLS) as p:
+    #     p.map(process_training_data, train_files[:1])
     
     val_files = glob(f'{args.file_dir}/validation/*')
     print(f'Processing validation data...{len(val_files)} found!')
     print('Starting processing pooling...')
     with Pool(NUM_POOLS) as p:
-        p.map(process_val_data, val_files)
+        p.map(process_val_data, val_files[:1])
     
-    test_files = glob(f'{args.file_dir}/testing/*')
-    print(f'Processing validation data...{len(test_files)} found!')
-    print('Starting processing pooling...')
-    with Pool(NUM_POOLS) as p:
-        p.map(process_test_data, test_files)
+    # test_files = glob(f'{args.file_dir}/testing/*')
+    # print(f'Processing validation data...{len(test_files)} found!')
+    # print('Starting processing pooling...')
+    # with Pool(NUM_POOLS) as p:
+    #     p.map(process_test_data, test_files[:1])
