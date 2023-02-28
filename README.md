@@ -7,11 +7,12 @@ This repo is the implementation of the following paper:
 <br> **[[arXiv]](http://arxiv.org/abs/2208.00394)**&nbsp;
 
 ## General Info
+- Our paper has been accepted in ICRA 23'!
 - This implementation is improved upon our solutions in ablations, which has won the **2nd place for 2022 Waymo Occupancy and Flow Prediction Challenge**
 - 🥈[**2022 Waymo Occupancy and Flow Prediction**](https://youtu.be/G01cfxuJ_ro)   
 - 🚗[**CVPR2022 Workshop on Autonomous Driving website**](https://cvpr2022.wad.vision)
 - 📑[**Waymo Occupancy and Flow Prediction Website**](https://waymo.com/open/challenges/2022/occupancy-flow-prediction-challenge/)
-- Our implementation has achieved 3 SOTA metrics (Sep-2022), outperforms other baselines without using pretrained models, and requires less memory costs:
+- Our implementation has achieved 3 SOTA metrics (Sep-2022), outperforms other baselines without using pretrained models, and has more concise structures:
 
 ![](pics/leaderboard.png)
 
