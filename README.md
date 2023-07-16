@@ -29,15 +29,13 @@ Also download the required [scenario IDs files](https://console.cloud.google.com
 If you find this work useful please cite us 😀
 
 ```
-@misc{https://doi.org/10.48550/arxiv.2208.00394,
-  doi = {10.48550/ARXIV.2208.00394},
-  url = {https://arxiv.org/abs/2208.00394},
-  author = {Liu, Haochen and Huang, Zhiyu and Lv, Chen},
-  keywords = {Computer Vision and Pattern Recognition (cs.CV), Artificial Intelligence (cs.AI), FOS: Computer and information sciences, FOS: Computer and information sciences},
-  title = {STrajNet: Multi-modal Hierarchical Transformer for Occupancy Flow Field Prediction in Autonomous Driving},
-  publisher = {arXiv},
-  year = {2022},
-  copyright = {Creative Commons Attribution 4.0 International}
+@inproceedings{liu2023multi,
+  title={Multi-modal Hierarchical Transformer for Occupancy Flow Field Prediction in Autonomous Driving},
+  author={Liu, Haochen and Huang, Zhiyu and Lv, Chen},
+  booktitle={2023 IEEE International Conference on Robotics and Automation (ICRA)},
+  pages={1449--1455},
+  year={2023},
+  organization={IEEE}
 }
 ```
 
